@@ -5,7 +5,6 @@ import 'package:get/get.dart';
 import 'package:motoboy/features/trip/controllers/trip_controller.dart';
 import 'package:motoboy/features/wallet/controllers/wallet_controller.dart';
 import 'package:motoboy/helper/login_helper.dart';
-import 'package:motoboy/localization/language_selection_screen.dart';
 import 'package:motoboy/localization/localization_controller.dart';
 import 'package:motoboy/util/images.dart';
 import 'package:motoboy/features/auth/controllers/auth_controller.dart';
@@ -92,12 +91,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   void _route() async {
     bool isSuccess = await Get.find<SplashController>().getConfigData();
     if (isSuccess) {
-      if(Get.find<LocalizationController>().haveLocalLanguageCode()){
-        LoginHelper().checkLoginRoutes(widget.notificationData, widget.userName);
-      }else{
-        Get.offAll(()=> LanguageSelectionScreen(userName: widget.userName, notificationData: widget.notificationData));
-      }
-
+      // Sempre vai direto para login, já que só temos pt_BR
+      LoginHelper().checkLoginRoutes(widget.notificationData, widget.userName);
     }
   }
 
