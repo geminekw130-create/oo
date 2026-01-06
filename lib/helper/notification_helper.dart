@@ -5,7 +5,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:get/get.dart';
+import 'package:get/Get.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:motoboy/features/chat/controllers/chat_controller.dart';
@@ -27,7 +27,6 @@ import 'package:motoboy/features/review/screens/review_screen.dart';
 import 'package:motoboy/features/ride/screens/ride_request_list_screen.dart';
 import 'package:motoboy/features/safety_setup/controllers/safety_alert_controller.dart';
 import 'package:motoboy/features/trip/screens/trip_details_screen.dart';
-import 'package:motoboy/features/wallet/controllers/wallet_controller.dart';
 import 'package:motoboy/helper/display_helper.dart';
 import 'package:motoboy/util/app_constants.dart';
 import 'package:motoboy/features/dashboard/screens/dashboard_screen.dart';
@@ -40,61 +39,59 @@ import 'package:motoboy/features/trip/screens/payment_received_screen.dart';
 import 'package:motoboy/features/trip/screens/review_this_customer_screen.dart';
 
 class NotificationHelper {
+  static const String _channelId = "high_importance_channel";
+  static const String _channelName = "Alertas Importantes";
+  static const String _channelDescription = "Canal para novas corridas e notificações críticas";
+
   static Future<void> initialize(FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin) async {
-    AndroidInitializationSettings androidInitialize = const AndroidInitializationSettings('notification_icon');
-    var iOSInitialize = const DarwinInitializationSettings();
-    var initializationsSettings = InitializationSettings(android: androidInitialize, iOS: iOSInitialize);
-    flutterLocalNotificationsPlugin.initialize(
+    const AndroidInitializationSettings androidInitialize = AndroidInitializationSettings('notification_icon');
+    const DarwinInitializationSettings iOSInitialize = DarwinInitializationSettings();
+    const InitializationSettings initializationsSettings = InitializationSettings(android: androidInitialize, iOS: iOSInitialize);
+
+    await flutterLocalNotificationsPlugin.initialize(
       initializationsSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) async {
         if (kDebugMode) {
           print('Notification response ==> ${response.payload.toString()}');
         }
-        // TODO: Route
         try {
           if (response.payload != null && response.payload!.isNotEmpty) {
-            if (kDebugMode) {
-              print('Notification response ==> ${response.payload.toString()}');
-            }
+            Map<String, dynamic> data = Uri.parse("app://notification?${response.payload!}").queryParameters;
+            notificationToRoute(data);
           }
         } catch (e) {
           if (kDebugMode) {
-            print('Notification response ==> ${response.payload.toString()}');
+            print('Erro ao processar clique na notificação: $e');
           }
         }
-        return;
       },
-
       onDidReceiveBackgroundNotificationResponse: myBackgroundMessageReceiver,
     );
 
+    // Cria o canal de alta importância
+    if (Platform.isAndroid) {
+      final AndroidFlutterLocalNotificationsPlugin? androidPlugin = 
+          flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.createNotificationChannel(const AndroidNotificationChannel(
+        _channelId,
+        _channelName,
+        description: _channelDescription,
+        importance: Importance.max,
+        playSound: true,
+        sound: RawResourceAndroidNotificationSound('notification'),
+        enableVibration: true,
+      ));
+    }
+
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      AndroidInitializationSettings androidInitialize = const AndroidInitializationSettings('notification_icon');
-      var iOSInitialize = const DarwinInitializationSettings();
-      var initializationsSettings = InitializationSettings(android: androidInitialize, iOS: iOSInitialize);
-      flutterLocalNotificationsPlugin.initialize(
-        initializationsSettings,
-        onDidReceiveNotificationResponse: (NotificationResponse response) async {
-          notificationToRoute(message.data);
-          return;
-        },
-
-        onDidReceiveBackgroundNotificationResponse: myBackgroundMessageReceiver,
-
-      );
-
-      /// Show log for debug
       if(kDebugMode){
         print('onMessage: ${message.data}');
       }
 
-
-      /// check maintenance mode
       if(!(Get.find<SplashController>().config!.maintenanceMode != null &&
           Get.find<SplashController>().config!.maintenanceMode!.maintenanceStatus == 1 &&
           Get.find<SplashController>().config!.maintenanceMode!.selectedMaintenanceSystem!.driverApp == 1) || Get.find<SplashController>().haveOngoingRides()){
 
-        ///Check webSocket connection
         if (Get.find<SplashController>().pusherConnectionStatus == null || Get.find<SplashController>().pusherConnectionStatus == 'Disconnected') {
           if (message.data['action'] == "new_ride_request" || message.data['action'] == "new_parcel_request") {
             _whenNewRequestFound(message);
@@ -106,7 +103,6 @@ class NotificationHelper {
            _whenRideComplete(message);
 
           } else if (message.data['action'] == "bid_accepted") {
-            ///Bid Ride Accepted in this case....
             _whenCustomerBidAccept(message);
 
           } else if (message.data['action'] == "coupon_removed" || message.data['action'] == "coupon_applied") {
@@ -185,10 +181,8 @@ class NotificationHelper {
 
           }
 
-          ///If web socket Not connected
         } else {
           if (message.data['action'] == "bid_accepted") {
-            ///Bid Ride Accepted in this case....
             _whenCustomerBidAccept(message);
 
           } else if (checkContainsAction(message.data['action'])) {
@@ -251,7 +245,6 @@ class NotificationHelper {
 
         }
 
-        ///checking which notification are not shown.
         if(!(message.data['action'] == "customer_canceled_trip" || message.data['action'] == "another_driver_assigned" || message.data['type'] == 'maintenance_mode_on' || message.data['type'] == 'maintenance_mode_off')){
           if(message.data['status'] == '1'){
             NotificationHelper.showNotification(message, flutterLocalNotificationsPlugin, true);
@@ -288,6 +281,35 @@ class NotificationHelper {
     '${AppConstants.baseUrl}/storage/app/public/notification/${message.data['image']}' :
     null;
 
+    // Usa o canal de alta importância
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDescription,
+      importance: Importance.max,
+      priority: Priority.high,
+      playSound: true,
+      sound: RawResourceAndroidNotificationSound('notification'),
+      enableVibration: true,
+      icon: 'notification_icon',
+    );
+
+    const NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
+
+    await fln.show(
+      DateTime.now().millisecond,
+      title,
+      body,
+      platformDetails,
+      payload: Uri(queryParameters: message.data).toString(),
+    );
+
+    // Som extra para nova corrida
+    if (message.data['action'] == "new_ride_request" || message.data['action'] == "new_parcel_request") {
+      final AudioPlayer audio = AudioPlayer();
+      await audio.play(AssetSource('notification.wav'));
+    }
+
     try {
       await showBigPictureNotificationHiddenLargeIcon(title, body, orderID, image, fln);
     } catch (e) {
@@ -298,8 +320,8 @@ class NotificationHelper {
 
   static Future<void> showTextNotification(String title, String body, String orderID, String action, FlutterLocalNotificationsPlugin fln) async {
     const AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
-      'hexaride',
-      'hexaride',
+      _channelId,
+      _channelName,
       playSound: true,
       importance: Importance.max,
       priority: Priority.max,
@@ -317,8 +339,8 @@ class NotificationHelper {
       htmlFormatContentTitle: true,
     );
     AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
-      'hexaride',
-      'hexaride',
+      _channelId,
+      _channelName,
       importance: Importance.max,
       styleInformation: bigTextStyleInformation,
       priority: Priority.max,
@@ -357,8 +379,8 @@ class NotificationHelper {
 
     }
     final AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
-      'hexaride',
-      'hexaride',
+      _channelId,
+      _channelName,
       priority: Priority.max,
       importance: Importance.max,
       playSound: true,
@@ -417,7 +439,6 @@ class NotificationHelper {
 
     }
     else if (data['action'] == "bid_accepted") {
-      ///Bid Ride Accepted in this case....
       Get.find<RideController>().getRideDetails(data['ride_request_id']).then((value) {
         if (value.statusCode == 200) {
           Get.find<RiderMapController>().setRideCurrentState(RideState.outForPickup);
@@ -590,16 +611,12 @@ class NotificationHelper {
 
 }
 
+@pragma('vm:entry-point')
 Future<dynamic> myBackgroundMessageHandler(RemoteMessage remoteMessage) async {
   customPrint('onBackground: ${remoteMessage.data}');
-  // var androidInitialize = new AndroidInitializationSettings('notification_icon');
-  // var iOSInitialize = new IOSInitializationSettings();
-  // var initializationsSettings = new InitializationSettings(android: androidInitialize, iOS: iOSInitialize);
-  // FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-  // flutterLocalNotificationsPlugin.initialize(initializationsSettings);
-  // NotificationHelper.showNotification(message, flutterLocalNotificationsPlugin, true);
 }
 
+@pragma('vm:entry-point')
 Future<dynamic> myBackgroundMessageReceiver(NotificationResponse response) async {
   customPrint('onBackgroundClicked: ${response.payload}');
 }
@@ -734,7 +751,6 @@ void _whenParcelAmountDeducted(RemoteMessage message){
       tripId: message.data['ride_request_id'],
     ));
   }else {
-    /// Add the refund data to show dialog after complete ongoing ride
     Get.find<SplashController>().addLastReFoundData(message.data);
   }
 }
