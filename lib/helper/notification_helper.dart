@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -37,6 +38,9 @@ import 'package:motoboy/features/ride/controllers/ride_controller.dart';
 import 'package:motoboy/features/splash/controllers/splash_controller.dart';
 import 'package:motoboy/features/trip/screens/payment_received_screen.dart';
 import 'package:motoboy/features/trip/screens/review_this_customer_screen.dart';
+
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
 
 class NotificationHelper {
   static const String _channelId = "high_importance_channel";
@@ -272,8 +276,8 @@ class NotificationHelper {
   }
 
   static Future<void> showNotification(RemoteMessage message, FlutterLocalNotificationsPlugin fln, bool data) async {
-    String title = message.data['title'];
-    String body = message.data['body'];
+    String title = message.data['title'] ?? 'Notificação';
+    String body = message.data['body'] ?? '';
     String? orderID = message.data['order_id'];
     String? image = (message.data['image'] != null && message.data['image'].isNotEmpty) ?
     message.data['image'].startsWith('http') ?
@@ -612,8 +616,39 @@ class NotificationHelper {
 }
 
 @pragma('vm:entry-point')
-Future<dynamic> myBackgroundMessageHandler(RemoteMessage remoteMessage) async {
-  customPrint('onBackground: ${remoteMessage.data}');
+Future<void> myBackgroundMessageHandler(RemoteMessage remoteMessage) async {
+  customPrint('onBackgroundMessage: ${remoteMessage.data}');
+
+  // Inicializa Firebase e notificações no isolate de background
+  await Firebase.initializeApp();
+  await NotificationHelper.initialize(flutterLocalNotificationsPlugin);
+
+  // Só exibe notificação para novas corridas ou encomendas (os casos mais importantes)
+  if (remoteMessage.data['action'] == 'new_ride_request' || 
+      remoteMessage.data['action'] == 'new_parcel_request') {
+
+    // Monta título e corpo (pois em data-only não vem no notification payload)
+    String title = remoteMessage.data['title'] ?? 'Nova Solicitação!';
+    String body = remoteMessage.data['body'] ?? 'Você tem uma nova corrida ou encomenda disponível.';
+
+    // Usa o mesmo método que funciona no foreground
+    await NotificationHelper.showNotification(
+      RemoteMessage(
+        data: remoteMessage.data,
+        notification: RemoteNotification(title: title, body: body),
+      ),
+      flutterLocalNotificationsPlugin,
+      true,
+    );
+
+    // Toca o som extra mesmo em background
+    try {
+      final AudioPlayer audio = AudioPlayer();
+      await audio.play(AssetSource('notification.wav'));
+    } catch (e) {
+      customPrint('Erro ao tocar som em background: $e');
+    }
+  }
 }
 
 @pragma('vm:entry-point')
