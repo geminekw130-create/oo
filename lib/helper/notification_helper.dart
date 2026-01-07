@@ -9,6 +9,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/Get.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:motoboy/features/wallet/controllers/wallet_controller.dart';
 import 'package:motoboy/features/chat/controllers/chat_controller.dart';
 import 'package:motoboy/features/chat/screens/message_screen.dart';
 import 'package:motoboy/features/dashboard/controllers/bottom_menu_controller.dart';
